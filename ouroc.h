@@ -72,7 +72,7 @@ struct Builder {
     void (*appendsrcs)(Builder*,char*);
     int  (*appendcmd)(Builder*,char*);
     void (*construct)(Builder*);
-    void (*execute)(Builder*);
+    int (*execute)(Builder*);
     void (*clean_up)(Builder*);
 };
 void appendcc(Builder*self,char*new_cc);
@@ -85,7 +85,7 @@ void appendsrcs(Builder*self,char*new_src);
 void clean_up(Builder*self);
 int appendcmd(Builder*self,char*str);
 void construct(Builder*self);
-void execute(Builder*self);
+int execute(Builder*self);
 void initbuilder(Builder*self);
 
 #endif 
@@ -240,9 +240,9 @@ void construct(Builder*self){
         SPACE_BUFFER(self);
     }
 }
-void execute(Builder*self){
+int execute(Builder*self){
     printf("Building %s ...\n",self->target);
-    system(self->build_command_buffer);
+    return system(self->build_command_buffer);
 }
 void initbuilder(Builder*self){
     self->appendcc = appendcc;

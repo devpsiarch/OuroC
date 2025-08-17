@@ -1,263 +1,371 @@
 #ifndef OUROC_H
-#define OUROC_H
+#define OUORC_H
 #include <stdio.h>
-#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include <sys/stat.h>
+#include <stdarg.h>
+#include <errno.h>
+#include <unistd.h>
 
-/*THE HEADER PART*/
+/*
+------------------------------------------------------------------------------
+    template.h -- small C framework
+------------------------------------------------------------------------------
+    Definition of the template.h header file that serves as a small
+    framework that "facilitates" working with the C programming language.
+    (The name might be a bit misleading but idk, that’s how I named the
+    first file and I’m used to it now).
 
-// recommeded to add
-#define CFLAGS "-Wall -Wextra"
-#define QUICK_MANUAL "Write the build.c builder file then execute it to compile your code\n"
-void printcmd(const unsigned int count,...);
-void cmd(const char*target,...);
+    More features will be added soon, like useful data structures and
+    some algorithms and "STL"-style containers.
 
-// ==============================================
-// ============== Definition: string_vec ==============
-// ==============================================
+TODO
+    -> More features
 
-typedef struct string_vec string_vec;
-struct string_vec {
-    char**vec;
-    size_t current;
+------------------------------------------------------------------------------
+*/
+
+#define ASSERT(cond,...)                                                \
+do{                                                                     \
+    if(!(cond)){                                                        \
+        fprintf(stderr,"%s,%d: ASSERTION FAILED: ",__FILE__,__LINE__);  \
+        fprintf(stderr,__VA_ARGS__);                                    \
+        fprintf(stderr,"\n");                                           \
+        exit(1);                                                        \
+    }                                                                   \
+}while(0)
+
+struct da_impl {
+    size_t len;
+    size_t elem_size;
     size_t capacity;
-    int (*append)(string_vec*,char*);
-    int (*pop)(string_vec*);
-    void (*destroy)(string_vec*);
 };
 
-#define SHOWVEC(subject) for(size_t i = 0 ; i < subject.current ; i++)\
-                     {printf("%s ",subject.vec[i]);               \
-                     }printf("\n");                              
 
-// definition of the string_vec struct functions
-int append(string_vec*self,char*str);
-int pop(string_vec*self);
-void destroy(string_vec*self);
-void initstring_vec(string_vec*self);
+#define DA_TEMPLATE(t) struct {struct da_impl impl;t *data;}
 
-typedef struct Builder Builder;
-#define SHOWCC(subject) printf("using compiler: %s.\n",subject.cc);
-#define SHOWTARGET(subject) printf("building : %s.\n",subject.target);
-#define SHOWBDIR(subject) if(subject.bdir == NULL)                     \
-                            printf("building in current directory.\n");\
-                          else                                         \
-                            printf("building to: %s.\n",subject.bdir); \
+#define DA_RESET(a) (a)->impl.len = 0
+#define DA_LEN(a) (a)->impl.len
 
-#define SHOWCOMMAND(subject) if(subject.buffer_used == 0)                    \
-                              printf("Build command not constructed yet.\n");               \
-                             else                                                           \
-                              printf("build command: %s.\n",subject.build_command_buffer);  \
+#define DA_INIT(a)                                  \
+    da_init_impl(&(a)->impl,sizeof(*(a)->data));    \
+    (a)->data = NULL
 
-#define SPACE_BUFFER(ptr_subject) ptr_subject->appendcmd(ptr_subject," ")
+#define DA_ALLOC(a,size)                            \
+do{                                                 \
+    (a)->data = malloc((size)*(a)->impl.elem_size); \
+    (a)->impl.capacity = (size);                    \
+}while(0)                                       
+
+#define DA_FREE(a) free((a)->data)
+#define DA_FREE_DATA(a)                         \
+do{                                             \
+    for(size_t i = 0 ; i < DA_LEN((a)) ; ++i){  \
+        free((a)->data[i]);                     \
+    }                                           \
+}while(0)
+
+#define INIT_DA_CAPACITY 512
+
+#define DA_APPEND(a,value)                                                                  \
+do{                                                                                         \
+    if((a)->impl.len >= ((a)->impl.capacity)){                                              \
+        (a)->impl.capacity = ((a)->impl.len == 0) ? INIT_DA_CAPACITY : (a)->impl.capacity*2;\
+        (a)->data = realloc((a)->data,(a)->impl.capacity*(a)->impl.elem_size);              \
+        ASSERT((a)->data != NULL,"ERROR: failed to reallocate memory for DA.\n");           \
+    }                                                                                       \
+    (a)->data[(a)->impl.len++] = (value);                                                   \
+}while(0)
+
+#define DA_POP(a)   \
+do{                 \
+    --(a)->impl.len;\
+}while(0)           
+
+#define DA_GET(a,index) (a)->data[(index)]
+
+#define DA_PRINT(a)                             \
+do{                                             \
+    for(size_t i = 0 ; i < DA_LEN((a)) ; ++i){  \
+        printf("%s\n",DA_GET((a),i));           \
+    }                                           \
+}while(0)
+
+#define DA_RESERVE(a,size) (a)->impl.capacity = (size);
 
 
-struct Builder {
-    char*      cc;
-    char*      target;
-    char*      bdir;
-    string_vec flags;
-    string_vec libs;
-    string_vec srcs;
-    char *build_command_buffer;
-    size_t buffer_used;
-    size_t buffer_max;
-    void (*appendcc)(Builder*,char*);
-    void (*appendtarget)(Builder*,char*);
-    void (*appendbdir)(Builder*,char*);
-    void (*appendflags)(Builder*,char*);
-    void (*appendlibs)(Builder*,char*);
-    void (*appendsrcs)(Builder*,char*);
-    int  (*appendcmd)(Builder*,char*);
-    void (*construct)(Builder*);
-    int (*execute)(Builder*);
-    void (*clean_up)(Builder*);
+typedef struct {
+    char* data;
+    struct da_impl impl;
+}StringOwn;
+
+#define STRING_OWN(name)    \
+    StringOwn name;         \
+    DA_INIT(&name);         \
+    DA_APPEND(&name,'\0')   
+
+#define STRING_OWN_APPEND(str,c)        \
+do{                                     \
+    (str)->data[DA_LEN(str)-1]=(c);     \
+    DA_APPEND((str),'\0');              \
+}while(0)                           
+#define STRING_OWN_POP(str)                 \
+do{                                         \
+    if(DA_LEN((str)) > 1){                  \
+        DA_POP((str));                      \
+        (str)->data[DA_LEN(str)-1]='\0';    \
+    }                                       \
+}while(0)
+
+#define STRING_OWN_RESERVER(str) DA_RESERVE((str))
+#define STRING_OWN_FREE(str) DA_FREE((str))
+#define STRING_OWN_LEN(str) DA_LEN((str))-1
+#define STRING_OWN_CAT(str,elem)            \
+do{                                         \
+    size_t len = strlen((elem));            \
+    for(size_t i = 0 ; i < len ; ++i){      \
+        STRING_OWN_APPEND(str,(elem)[i]);   \
+    }                                       \
+}while(0)
+
+/*
+ *
+ * Function delcaration for template.h
+ *
+*/
+// creates a string on the heap and returns its pointer
+char* heap_string(const char* stack_string);
+// initilizes the "struct da_impl" part of the dynamic array that defines:size,cap.data...
+void da_init_impl(struct da_impl* impl,size_t elem_size);
+
+/*
+------------------------------------------------------------------------------
+    ouroc.h -- build recipes header
+------------------------------------------------------------------------------
+    The main definition for the ouroc.h header file that describes
+    the creating of build recipes.
+
+    Current support: Linux
+    hopes and prayers for Windows support. (fr maybe soon, when i feel like it).
+
+USAGE
+    The library is supposed to utilize the macros that facilitate
+    recipes building, although I recommend giving the library a read.
+
+    Here is a sample file:
+
+        int main(void){
+            // macro that initializes everything u need for ouroc object
+            OUROC(main,"test","test.c");
+            OUROC_BUILD_CMD(&main,"gcc","test.c","-o","test");
+
+            OUROC(run,NULL,"test");
+            OUROC_BUILD_CMD(&run,"./test");
+
+            ouroc_run_cmd(&main);
+            ouroc_run_cmd(&run);
+
+            // macro for cleaning up everything
+            OUROC_KILL(&main);
+            OUROC_KILL(&run);
+            return 0;
+        }
+
+TODO
+    -> More features
+    -> More options for functionality/usage
+    -> Nested dependencies management
+    -> Async/sync builds
+    -> Better logging messages
+    -> Color in logging
+
+------------------------------------------------------------------------------
+*/
+
+enum LogType {
+    INFO,
+    WARN,
+    ERROR
 };
-void appendcc(Builder*self,char*new_cc);
-void appendtarget(Builder*self,char*new_target);
-void appendbdir(Builder*self,char*new_bdir);
-void appendflags(Builder*self,char*new_flag);
-void appendlibs(Builder*self,char*new_lib);
-void appendsrcs(Builder*self,char*new_src);
 
-void clean_up(Builder*self);
-int appendcmd(Builder*self,char*str);
-void construct(Builder*self);
-int execute(Builder*self);
-void initbuilder(Builder*self);
+struct ouroc {
+    char* target;
+    DA_TEMPLATE(char*) depend;
+    DA_TEMPLATE(char*) stream;
+};
 
-#endif 
+#define OUROC_BUILD_CMD(cmd, ...)                               \
+    ouroc_append_stream_many(cmd,                               \
+    (sizeof((const char*[]){__VA_ARGS__})/sizeof(const char*)), \
+    __VA_ARGS__)
+
+
+#define OUROC_INIT(cmd,target, ...)                             \
+    ouroc_init_many(cmd,                                        \
+    target,                                                     \
+    (sizeof((const char*[]){__VA_ARGS__})/sizeof(const char*)), \
+    __VA_ARGS__)
+
+#define OUROC_KILL(cmd)      \
+    DA_FREE(&(cmd)->stream);  \
+    DA_FREE(&(cmd)->depend);
+
+
+#define OUROC(name,...)             \
+    struct ouroc name = {0};        \
+    OUROC_INIT(&name,__VA_ARGS__)
+    
+
+/*
+ *
+ * Function declarations for the core ouroc.h header file.
+ * 
+ * small explination provided for each function.
+ *
+ * */
+
+
+// duh logs to stdout a message (add '\n' on its own)
+void ouroc_log(enum LogType t, const char *fmt, ...);
+// returns status of a file and exit(1) if fail
+struct stat get_file_state(const char* filename);
+// addes pointers to strings to build "stream" to be executed
+void ouroc_append_stream_many(struct ouroc*master,const unsigned int count,...);
+// runs the command after it has been assembled from "stream"
+void ouroc_run_cmd(struct ouroc*master);
+// inititilizes the "target" and its file "dependencies" 
+void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...);
+
+
+
+#endif
 #ifndef OUROC_IMPLI
-#define OUROC_IMPLI
+#define OUORC_IMPLI
 
-/*The C implimentation part*/
 
-void printcmd(const unsigned int count,...){
-    char*next;
+/*
+ *
+ * Function implimentation for template.h
+ *
+*/
+char* heap_string(const char* stack_string){
+    size_t len = strlen(stack_string);
+    char* str = malloc(sizeof(char)*(len+1));
+    memcpy(str,stack_string,len+1);
+    return str;
+}
+void da_init_impl(struct da_impl* impl,size_t elem_size){
+    impl->len = 0;
+    impl->elem_size = elem_size;
+    impl->capacity = 0;
+}
+
+/*
+ *
+ * Function implimentation for core ouroc.h
+ *
+*/
+
+void ouroc_log(enum LogType t, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    switch (t) {
+        case INFO:
+            printf("[INFO]: ");
+            vprintf(fmt, args);
+            printf("\n");
+            break;
+        case WARN:
+            printf("[WARN]: ");
+            vprintf(fmt, args);
+            printf("\n");
+            break;
+        case ERROR:
+            printf("[ERROR]: ");
+            vprintf(fmt, args);
+            printf("\n");
+            break;
+    }
+
+    va_end(args);
+}
+
+struct stat get_file_state(const char* filename){
+    struct stat info;
+    if(stat(filename,&info) != 0){
+        switch(errno){
+            case ENOENT:
+                ouroc_log(ERROR,"File \"%s\" does not exist.",filename);
+                break;
+            case EACCES:
+                ouroc_log(ERROR,"Dont have permission to get stat for \"%s\".",filename);
+                break;
+            case ENOTDIR:
+                ouroc_log(ERROR,"Component in the path to \"%s\" isn’t a directory.",filename);
+                break;
+            default:
+                ouroc_log(ERROR,"Could not get stat for file \"%s\".",filename);
+                break;
+        }
+        exit(1);
+    }
+    return info;
+}
+void ouroc_append_stream_many(struct ouroc*master,const unsigned int count,...){
+    char* next;
     va_list args;
     va_start(args,count);
-    for(unsigned int i = 0 ; i < count ; i ++){
-        next = va_arg(args,char *);
-        printf("%s ",next);
+    for(unsigned int i = 0 ; i < count ; ++i){
+        next = va_arg(args,char*);
+        DA_APPEND(&master->stream,next);
     }
     va_end(args);
 }
-
-void cmd(const char*target,...){
-    char buffer[256];
-    size_t current = 0;
-    char*next = NULL;
+void ouroc_run_cmd(struct ouroc*master){
+    /* Check if target exists */
+    if(access(master->target,F_OK) != 0) goto rebuild_target;
+    struct stat target_info = get_file_state(master->target);
+    /* Check for changed dependency files */
+    for(size_t i = 0 ; i < DA_LEN(&master->depend) ; ++i){
+        char* file = master->depend.data[i];
+        struct stat dep_info = get_file_state(file);
+        if(dep_info.st_mtime > target_info.st_mtime) goto rebuild_target;
+    }
+    return;
+rebuild_target:
+    /* Building the command to be executed */
+    STRING_OWN(command);
+    for(size_t i = 0 ; i < DA_LEN(&master->stream) ;++i){
+        char* arg = master->stream.data[i];
+        STRING_OWN_CAT(&command,arg);
+        STRING_OWN_APPEND(&command,' ');
+    }    
+    if(master->target == NULL) ouroc_log(INFO,"executing.");
+    else ouroc_log(INFO,"Building \"%s\".",master->target);
+    int ret = system(command.data);
+    if(ret != 0){
+        ouroc_log(ERROR,"Failed building \"%s\".",master->target);
+        exit(1);
+    }
+    if(master->target == NULL) ouroc_log(INFO,"execution done.");
+    else ouroc_log(INFO,"\"%s\" done.",master->target);
+    STRING_OWN_FREE(&command); 
+}
+void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
+    master->target = target;
+    DA_INIT(&master->depend);
+    DA_INIT(&master->stream);
+    char* next;
     va_list args;
-    va_start(args,target);
-    while(next != target){
+    va_start(args,count);
+    for(size_t i = 0 ; i < count; i++){
         next = va_arg(args,char *);
-        size_t len = strlen(next); 
-        for(size_t i = 0 ; i < len ; i++){
-            buffer[current+i] = next[i];
-        }
-        buffer[current+ len] = ' ';
-        current+= len+1;
+        DA_APPEND(&master->depend,next);
     }
     va_end(args);
-    buffer[current] = '\0';
-    printf("%s\n",buffer);
-    system(buffer);
 }
 
-// additional implimentation for conviniance ... this is C
 
-// ==============================================
-// ============== Implementation: string_vec ==============
-// ==============================================
-
-// I leave the freadome to users to either use the appendcmd to manualy 
-// build there build command 
-// or use the templates like appendsrc...
-
-int append(string_vec*self,char*str){
-    if(self->current >= self->capacity){
-        size_t new_capacity = self->capacity*2;
-        char**new_vec = realloc(self->vec,sizeof(char*)*new_capacity);
-        if(new_vec == NULL){
-            // this way we keep the original vec if appending failed.
-            perror("realloc failed while appending to string_vec.\n");
-            return -1;
-        }
-        self->vec = new_vec;
-        self->capacity = new_capacity;
-    }
-    // creates a new memory and copy the str
-    self->vec[self->current] = strdup(str);
-    if(!self->vec[self->current]){
-        perror("Failed to copy new element while appending to vec.\n");
-        return -1;
-    }
-    self->current++;
-    return 0;
-}
-int pop(string_vec*self){
-    if(self->current == 0){
-        perror("failed to pop since string_vec is already empty.\n");
-        return -1;
-    }
-    self->current--;
-    return 0;
-}
-
-void destroy(string_vec*self){
-    for(size_t i = 0 ; i < self->capacity ; i++){
-        free(self->vec[i]);
-    }
-    self->vec = NULL;
-    self->current = 0;
-    self->capacity = 0;
-}
-void initstring_vec(string_vec*self){
-    self->append = append;
-    self->pop = pop;
-    self->destroy = destroy;
-    self->current = 0;
-    self->capacity = 4;
-    self->vec = malloc(sizeof(char*)*4);
-}
-// ==============================================
-// ============== Implementation: Builder ==============
-// ==============================================
-// TODO:
-// placeholder for now .... we need to cat all the string we have and execute the command
-// add in some crossplateform stuff 
-// also change the buffer and the char pointer to the heap , its neeter.
-
-void appendcc(Builder*self,char*new_cc){self->cc = new_cc;}
-void appendtarget(Builder*self,char*new_target){self->target = new_target;}
-void appendbdir(Builder*self,char*new_bdir){self->bdir = new_bdir;}
-
-void appendflags(Builder*self,char*new_flag){self->flags.append(&self->flags,new_flag);}
-void appendlibs(Builder*self,char*new_lib){self->libs.append(&self->libs,new_lib);}
-void appendsrcs(Builder*self,char*new_src){self->srcs.append(&self->srcs,new_src);}
-
-// petetion to be added as <defer> as macro to call Builder.clean_up 
-// for poor user who used this software...
-void clean_up(Builder*self){
-    self->flags.destroy(&self->flags);
-    self->srcs.destroy(&self->srcs);
-    self->libs.destroy(&self->libs);
-    free(self->build_command_buffer);
-}
-int appendcmd(Builder*self,char*str){
-    size_t str_len = strlen(str);
-    if(str_len + self->buffer_used + 1 > self->buffer_max){
-        size_t new_max = (self->buffer_max+str_len)*2;
-        char* new_buffer = realloc(self->build_command_buffer,new_max);
-        if(new_buffer == NULL){
-            perror("realloc failed while appending cmd \n");
-            return -1;
-        }
-        self->build_command_buffer = new_buffer;
-        self->buffer_max = new_max;
-    }
-    strcpy(self->build_command_buffer+self->buffer_used,str);
-    self->buffer_used += str_len;
-    return 0;
-}
-void construct(Builder*self){
-    self->appendcmd(self,self->cc);
-    SPACE_BUFFER(self);
-    for(size_t i = 0 ; i < self->flags.current ; ++i){
-        self->appendcmd(self,self->flags.vec[i]);
-        SPACE_BUFFER(self);
-    }
-    self->appendcmd(self,self->target);
-    SPACE_BUFFER(self);
-    for(size_t i = 0 ; i < self->srcs.current ; ++i){
-        self->appendcmd(self,self->srcs.vec[i]);
-        SPACE_BUFFER(self);
-    }
-    for(size_t i = 0 ; i < self->libs.current ; ++i){
-        self->appendcmd(self,self->libs.vec[i]);
-        SPACE_BUFFER(self);
-    }
-}
-int execute(Builder*self){
-    printf("Building %s ...\n",self->target);
-    return system(self->build_command_buffer);
-}
-void initbuilder(Builder*self){
-    self->appendcc = appendcc;
-    self->appendtarget = appendtarget;
-    self->appendbdir = appendbdir;
-    initstring_vec(&self->flags);
-    initstring_vec(&self->libs);
-    initstring_vec(&self->srcs);
-    self->appendflags = appendflags;
-    self->appendlibs = appendlibs;
-    self->appendsrcs = appendsrcs;
-    self->clean_up = clean_up;
-    self->appendcmd = appendcmd;
-    self->construct = construct;
-    self->execute = execute;
-    self->build_command_buffer = (char*)malloc(self->buffer_max);
-}
 #endif

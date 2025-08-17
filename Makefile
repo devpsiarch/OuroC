@@ -3,7 +3,10 @@ CC = clang
 SRC = main
 
 build:$(SRC).c
-	$(CC) $(CFLAGS) $(SRC).c -o $(SRC)
+	$(CC) $(CFLAGS) $(SRC).c -o bin/$(SRC)
 run:build
-	./$(SRC)
+	./bin/$(SRC)
+
+clean:
+	rm bin/*
 

@@ -1,124 +1,52 @@
-----------
-
 # 🌀 OuroC
+> Project available for now only for Linux , Windows support soon. 
 
-**Build your C project using nothing but pure C!**
+**Build recipes in pure C.**
 
-----------
 
-## 🔧 What is OuroC?
+## What is OuroC?
 
-**OuroC** is a build system _written in C, for C projects_. No Makefiles, no bash scripts — just pure C code building more C code. If you're tired of hiding behind tools and want full control over your build process (or just want to flex), this one's for you.
+**OuroC** is a stb-style header only file library that provides a simpler way to create build recipes using only C language.  it also provides small framework containing useful functionality as a desert.
 
-----------
-
-## 🚀 How to Use
+## Getting started
 
 ### 1. Add the Header
 
-Place `ouroc.h` in your home/project directory.
+Place `ouroc.h` in your root project directory.
 
 ### 2. Create a `build.c`
 
 This file will contain your build instructions. Here's a basic example:
 
 ```c
+#include "ouroc.h"
 #define OUROC_IMPLI
-#include "./ouroc.h"
-#include <stdio.h>
 
-int main(void) {
-    Builder builder = {
-        .bdir = NULL,
-        .buffer_used = 0,
-        .buffer_max = 256
-    };
-    initbuilder(&builder);
+int main(void){
+    // declare the target and its file dependencies
+    OUROC(main,"bin/main","main.c");
+    // build the command to build
+    OUROC_BUILD_CMD(&main,"gcc","main.c","-o","bin/main");
 
-    builder.appendcc(&builder, "clang");
-    builder.appendtarget(&builder, "test");
-    builder.appendsrcs(&builder, "test.c");
-    builder.appendflags(&builder, "-Wall");
-    builder.appendflags(&builder, "-Wextra");
-    builder.appendflags(&builder, "-lm");
-    builder.appendflags(&builder, "-o");
-
-    builder.construct(&builder);
-    SHOWCOMMAND(builder);
-    builder.execute(&builder);
-    builder.clean_up(&builder);
-    
+    OUROC(run,NULL,"bin/main");
+    OUROC_BUILD_CMD(&run,"./bin/main");
+	    
+	// run the command
+    ouroc_run_cmd(&main);
+    ouroc_run_cmd(&run);
+	
+	// clean up
+    OUROC_KILL(&main);
+    OUROC_KILL(&run);
     return 0;
 }
-
 ```
-
-### 3. Or Construct in Real Time
-
-```c
-#define OUROC_IMPLI
-#include "./ouroc.h"
-#include <stdio.h>
-
-int main(void) {
-    Builder b = {
-        .bdir = NULL,
-        .buffer_used = 0,
-        .buffer_max = 256
-    };
-    initbuilder(&b);
-
-    b.appendcmd(&b, "gcc ");
-    b.appendcmd(&b, "-Wall ");
-    b.appendcmd(&b, "-Wextra ");
-    b.appendcmd(&b, "-lm ");
-    b.appendcmd(&b, "-o admin_test ");
-    b.appendcmd(&b, "test.c");
-
-    SHOWCOMMAND(b);
-    b.execute(&b);
-    b.clean_up(&b);
-
-    return 0;
-}
-
-```
-
-### 4. Build Once, Run Forever™
-
-Just compile your builder once:
-
+### 4. Bootstrap the build file
+#### On Linux
 ```bash
 gcc build.c -o build
 ```
-
-Then build your project anytime with:
-
+then run the build:
 ```bash
 ./build
 ```
-
-----------
-
-## 🤔 Why OuroC?
-
-> "If you’re building your C projects with anything **but** C, are you even a real programmer?"  
-
-OuroC is here to prove a point — and maybe make your build process more fun and transparent along the way.
-
-----------
-
-## 🛠️ Roadmap
-
--   Optimized builder for larger projects (dependency tracking, parallel builds, etc.)
-    
--   Support passing arguments directly: `./build run` or `./build test`
-    
-
-----------
-
-## ❤️ Contribute
-
-Wanna flex your low-level skills? PRs welcome — just keep it pure C.
-
-----------

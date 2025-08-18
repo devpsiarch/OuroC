@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <unistd.h>
+#include <pthread.h>
 
 /*
 ------------------------------------------------------------------------------
@@ -176,7 +177,7 @@ TODO
     -> More features
     -> More options for functionality/usage
     -> Nested dependencies management
-    -> Async/sync builds
+    -> Better Async/sync builds
     -> Better logging messages
     -> Color in logging
 
@@ -216,6 +217,17 @@ struct ouroc {
     struct ouroc name = {0};        \
     OUROC_INIT(&name,__VA_ARGS__)
     
+/* async build commands here */
+
+typedef pthread_t ouroc_proc;
+
+struct ouroc_pool {
+    DA_TEMPLATE(ouroc_proc) procs;
+};
+
+#define OUROC_POOL(name) struct ouroc_pool name; DA_INIT(&name.procs)
+#define OUROC_POOL_APPEND(master,proc) DA_APPEND(&(master)->procs,(proc))
+
 
 /*
  *
@@ -237,6 +249,14 @@ void ouroc_run_cmd(struct ouroc*master);
 // inititilizes the "target" and its file "dependencies" 
 void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...);
 
+/* async function delcaration */
+
+// man-in_middle function that pthread api uses , it calls "ouroc_run_cmd"
+void* ouroc_build_thread_porter(void*arg);
+// adds then runs async the build process for "value"
+void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value);
+// waits for all the ouroc processes, then cleans up
+void ouroc_pool_wait_all(struct ouroc_pool* master);
 
 
 #endif
@@ -367,5 +387,25 @@ void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
     va_end(args);
 }
 
+/* asyn implimentation */
+
+void* ouroc_build_thread_porter(void*arg){
+    struct ouroc* obj = arg;
+    ouroc_run_cmd(obj);
+    return NULL;
+}
+
+void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value){
+    ouroc_proc proc;
+    pthread_create(&proc,NULL,ouroc_build_thread_porter,value);
+    OUROC_POOL_APPEND(master,proc);
+}
+
+void ouroc_pool_wait_all(struct ouroc_pool* master){
+   for(size_t i = 0 ; i < DA_LEN(&master->procs) ; i++){
+        pthread_join(master->procs.data[i],NULL);
+   }
+   DA_RESET(&master->procs);
+}
 
 #endif

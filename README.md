@@ -1,10 +1,4 @@
 # 🌀 OuroC
-> Project available for now only for Linux.
-
-**Build recipes in pure C.**
-
-
-## What is OuroC?
 
 **OuroC** is a stb-style header only file library that provides a simpler way to create build recipes using only C language.  it also provides small framework containing useful functionality as a desert.
 
@@ -93,4 +87,3 @@ or on powershell:
 .\build.exe
 ```
 > Windows support is shaky, please point out any problems.
-

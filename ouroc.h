@@ -6,8 +6,15 @@
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <errno.h>
-#include <unistd.h>
-#include <pthread.h>
+
+#ifdef _WIN32
+  #include <windows.h>
+  #include <io.h>
+  #include <process.h>
+#else
+  #include <unistd.h>
+  #include <pthread.h>
+#endif
 
 /*
 ------------------------------------------------------------------------------
@@ -177,17 +184,18 @@ TODO
     -> More features
     -> More options for functionality/usage
     -> Nested dependencies management
-    -> Better Async/sync builds
+    -> [DONE] Better Async/sync builds
     -> Better logging messages
     -> Color in logging
+    -> Thread safe printing to stdout (annoying)
 
 ------------------------------------------------------------------------------
 */
 
 enum LogType {
-    INFO,
-    WARN,
-    ERROR
+    OUROC_INFO,
+    OUROC_WARN,
+    OUROC_ERROR
 };
 
 struct ouroc {
@@ -218,8 +226,11 @@ struct ouroc {
     OUROC_INIT(&name,__VA_ARGS__)
     
 /* async build commands here */
-
-typedef pthread_t ouroc_proc;
+#ifdef _WIN32
+    typedef HANDLE ouroc_proc;
+#else
+    typedef pthread_t ouroc_proc;
+#endif
 
 struct ouroc_pool {
     DA_TEMPLATE(ouroc_proc) procs;
@@ -241,7 +252,7 @@ struct ouroc_pool {
 // duh logs to stdout a message (add '\n' on its own)
 void ouroc_log(enum LogType t, const char *fmt, ...);
 // returns status of a file and exit(1) if fail
-struct stat get_file_state(const char* filename);
+struct stat ouroc_get_file_state(const char* filename);
 // addes pointers to strings to build "stream" to be executed
 void ouroc_append_stream_many(struct ouroc*master,const unsigned int count,...);
 // runs the command after it has been assembled from "stream"
@@ -251,8 +262,36 @@ void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...);
 
 /* async function delcaration */
 
-// man-in_middle function that pthread api uses , it calls "ouroc_run_cmd"
-void* ouroc_build_thread_porter(void*arg);
+#ifdef _WIN32
+    typedef DWORD ouroc_proc_ret;
+    #define OUROC_CALLCONV WINAPI
+#else
+    typedef void* ouroc_proc_ret;
+    #define OUROC_CALLCONV 
+#endif
+
+
+
+
+#ifdef _WIN32
+    #define OUROC_CREATE_PROC(proc,porter,arg) \
+            (proc) = CreateThread(NULL,0,(porter),(arg),0,NULL)
+
+    #define OUROC_WAIT_PROC(proc)               \
+        do{                                     \
+            WaitForSingleObject(proc,INFINITE); \
+            CloseHandle(proc);                  \
+        }while(0)
+#else
+    #define OUROC_CREATE_PROC(proc,porter,arg) \
+        pthread_create(&(proc),NULL,(porter),(arg));
+    
+    #define OUROC_WAIT_PROC(proc) \
+        pthread_join(proc,NULL)
+#endif
+
+// man-in_middle function that pthread/win api uses , it calls "ouroc_run_cmd"
+ouroc_proc_ret OUROC_CALLCONV ouroc_build_thread_porter(void*arg);
 // adds then runs async the build process for "value"
 void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value);
 // waits for all the ouroc processes, then cleans up
@@ -292,18 +331,18 @@ void ouroc_log(enum LogType t, const char *fmt, ...) {
     va_start(args, fmt);
 
     switch (t) {
-        case INFO:
-            printf("[INFO]: ");
+        case OUROC_INFO:
+            printf("[OUROC_INFO]: ");
             vprintf(fmt, args);
             printf("\n");
             break;
-        case WARN:
-            printf("[WARN]: ");
+        case OUROC_WARN:
+            printf("[OUROC_WARN]: ");
             vprintf(fmt, args);
             printf("\n");
             break;
-        case ERROR:
-            printf("[ERROR]: ");
+        case OUROC_ERROR:
+            printf("[OUROC_ERROR]: ");
             vprintf(fmt, args);
             printf("\n");
             break;
@@ -312,21 +351,21 @@ void ouroc_log(enum LogType t, const char *fmt, ...) {
     va_end(args);
 }
 
-struct stat get_file_state(const char* filename){
+struct stat ouroc_get_file_state(const char* filename){
     struct stat info;
     if(stat(filename,&info) != 0){
         switch(errno){
             case ENOENT:
-                ouroc_log(ERROR,"File \"%s\" does not exist.",filename);
+                ouroc_log(OUROC_ERROR,"File \"%s\" does not exist.",filename);
                 break;
             case EACCES:
-                ouroc_log(ERROR,"Dont have permission to get stat for \"%s\".",filename);
+                ouroc_log(OUROC_ERROR,"Dont have permission to get stat for \"%s\".",filename);
                 break;
             case ENOTDIR:
-                ouroc_log(ERROR,"Component in the path to \"%s\" isn’t a directory.",filename);
+                ouroc_log(OUROC_ERROR,"Component in the path to \"%s\" isn’t a directory.",filename);
                 break;
             default:
-                ouroc_log(ERROR,"Could not get stat for file \"%s\".",filename);
+                ouroc_log(OUROC_ERROR,"Could not get stat for file \"%s\".",filename);
                 break;
         }
         exit(1);
@@ -346,11 +385,11 @@ void ouroc_append_stream_many(struct ouroc*master,const unsigned int count,...){
 void ouroc_run_cmd(struct ouroc*master){
     /* Check if target exists */
     if(access(master->target,F_OK) != 0) goto rebuild_target;
-    struct stat target_info = get_file_state(master->target);
+    struct stat target_info = ouroc_get_file_state(master->target);
     /* Check for changed dependency files */
     for(size_t i = 0 ; i < DA_LEN(&master->depend) ; ++i){
         char* file = master->depend.data[i];
-        struct stat dep_info = get_file_state(file);
+        struct stat dep_info = ouroc_get_file_state(file);
         if(dep_info.st_mtime > target_info.st_mtime) goto rebuild_target;
     }
     return;
@@ -362,15 +401,15 @@ rebuild_target:
         STRING_OWN_CAT(&command,arg);
         STRING_OWN_APPEND(&command,' ');
     }    
-    if(master->target == NULL) ouroc_log(INFO,"executing.");
-    else ouroc_log(INFO,"Building \"%s\".",master->target);
+    if(master->target == NULL) ouroc_log(OUROC_INFO,"executing.");
+    else ouroc_log(OUROC_INFO,"Building \"%s\".",master->target);
     int ret = system(command.data);
     if(ret != 0){
-        ouroc_log(ERROR,"Failed building \"%s\".",master->target);
+        ouroc_log(OUROC_ERROR,"Failed building \"%s\".",master->target);
         exit(1);
     }
-    if(master->target == NULL) ouroc_log(INFO,"execution done.");
-    else ouroc_log(INFO,"\"%s\" done.",master->target);
+    if(master->target == NULL) ouroc_log(OUROC_INFO,"execution done.");
+    else ouroc_log(OUROC_INFO,"\"%s\" done.",master->target);
     STRING_OWN_FREE(&command); 
 }
 void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
@@ -389,21 +428,25 @@ void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
 
 /* asyn implimentation */
 
-void* ouroc_build_thread_porter(void*arg){
+ouroc_proc_ret OUROC_CALLCONV ouroc_build_thread_porter(void*arg){
     struct ouroc* obj = arg;
     ouroc_run_cmd(obj);
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
 void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value){
     ouroc_proc proc;
-    pthread_create(&proc,NULL,ouroc_build_thread_porter,value);
+    OUROC_CREATE_PROC(proc,ouroc_build_thread_porter,value);
     OUROC_POOL_APPEND(master,proc);
 }
 
 void ouroc_pool_wait_all(struct ouroc_pool* master){
    for(size_t i = 0 ; i < DA_LEN(&master->procs) ; i++){
-        pthread_join(master->procs.data[i],NULL);
+       OUROC_WAIT_PROC(master->procs.data[i]); 
    }
    DA_RESET(&master->procs);
 }

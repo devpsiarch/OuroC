@@ -137,6 +137,13 @@ do{                                         \
     }                                       \
 }while(0)
 
+
+char* ouroc_read_all_file(const char* filepath);
+bool ouroc_file_exists(const char* filepath);
+bool ouroc_dir_exists(const char* filepath);
+bool ouroc_touch_file(const char* filepath);
+bool ouroc_make_dir(const char* filepath);
+
 /*
  *
  * Function delcaration for template.h
@@ -320,6 +327,52 @@ void da_init_impl(struct da_impl* impl,size_t elem_size){
     impl->capacity = 0;
 }
 
+char* ouroc_read_all_file(const char* filepath){
+    char* file_content = NULL;
+    FILE* fp = fopen(filepath,"rb");
+    if(fp == NULL) goto defer;
+    long file_size;
+    fseek(fp,0,SEEK_END);
+    file_size = ftell(fp);
+    fseek(fp,0,0);
+    if(file_size < 0) goto defer;
+    file_content = malloc((size_t)file_size+1);
+    if(file_content == NULL) goto defer;
+    if(fread(file_content,1,file_size,fp) != (size_t)file_size) goto defer;
+    file_content[file_size] = '\0';
+    fclose(fp);
+    return file_content;
+defer:
+    if(fp != NULL) fclose(fp);
+    if(file_content != NULL) free(file_content);
+    return NULL;
+}
+bool ouroc_file_exists(const char* filepath){
+    #ifdef _WIN32
+        return _access(filepath,F_OK) == 0;
+    #else
+        return access(filepath,F_OK) == 0;
+    
+    #endif
+}
+bool ouroc_dir_exists(const char* filepath){
+    return ouroc_file_exists(filepath);
+}
+bool ouroc_touch_file(const char* filepath){
+    FILE*fp = fopen(filepath,"w");
+    if(fp == NULL) goto defer;
+defer:
+    if(fp != NULL) fclose(fp);
+}
+bool ouroc_make_dir(const char* filepath){
+    #ifdef _WIN32
+        return CreateDirectoryA(filepath, NULL) || GetLastError() == ERROR_ALREADY_EXISTS;    
+    #else
+        return mkdir(filepath, 0755) == 0 || errno == EEXIST;
+    #endif
+}
+
+
 /*
  *
  * Function implimentation for core ouroc.h
@@ -384,7 +437,7 @@ void ouroc_append_stream_many(struct ouroc*master,const unsigned int count,...){
 }
 void ouroc_run_cmd(struct ouroc*master){
     /* Check if target exists */
-    if(access(master->target,F_OK) != 0) goto rebuild_target;
+    if(ouroc_file_exists(master->target)) goto rebuild_target;
     struct stat target_info = ouroc_get_file_state(master->target);
     /* Check for changed dependency files */
     for(size_t i = 0 ; i < DA_LEN(&master->depend) ; ++i){

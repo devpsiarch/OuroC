@@ -53,12 +53,17 @@ struct da_impl {
 
 #define DA_TEMPLATE(t) struct {struct da_impl impl;t *data;}
 
-#define DA_RESET(a) (a)->impl.len = 0
-#define DA_LEN(a) (a)->impl.len
-
 #define DA_INIT(a)                                  \
     da_init_impl(&(a)->impl,sizeof(*(a)->data));    \
     (a)->data = NULL
+
+
+#define DA_TEMPLATE_INIT(t,name)  \
+    DA_TEMPLATE(t) name;          \
+    DA_INIT(&name)
+
+#define DA_RESET(a) (a)->impl.len = 0
+#define DA_LEN(a) (a)->impl.len
 
 #define DA_ALLOC(a,size)                            \
 do{                                                 \
@@ -138,11 +143,26 @@ do{                                         \
 }while(0)
 
 
-char* ouroc_read_all_file(const char* filepath);
-bool ouroc_file_exists(const char* filepath);
-bool ouroc_dir_exists(const char* filepath);
-bool ouroc_touch_file(const char* filepath);
-bool ouroc_make_dir(const char* filepath);
+struct rb_impl {
+    size_t len;
+    size_t elem_size;
+    size_t capacity;
+    bool fixed;
+};
+
+#define RB_TEMPLATE(t) struct {struct rb_impl impl;t *data;}
+
+#define RB_INIT(a,capacity)                                 \
+    rb_init_impl(&(a)->impl,sizeof(*(a)->data),(capacity)); \
+    (a)->data = malloc((a)->impl.elem_size*(capacity)) 
+
+#define RB_FREE(a) \
+    free((a)->data);
+
+
+#define RB_TEMPLATE_INIT(t,cap,name) \
+    RB_TEMPLATE(t) name;             \
+    RB_INIT(&name,(cap))
 
 /*
  *
@@ -153,7 +173,14 @@ bool ouroc_make_dir(const char* filepath);
 char* heap_string(const char* stack_string);
 // initilizes the "struct da_impl" part of the dynamic array that defines:size,cap.data...
 void da_init_impl(struct da_impl* impl,size_t elem_size);
-
+// initilizes the "struct rb_impl" part of the ring buffer that defines:len,const cap,data...
+void rb_init_impl(struct rb_impl* impl,size_t elem_size,size_t capacity);
+// filesystem functionality
+char* ouroc_read_all_file(const char* filepath);
+bool ouroc_file_exists(const char* filepath);
+bool ouroc_dir_exists(const char* filepath);
+bool ouroc_touch_file(const char* filepath);
+bool ouroc_make_dir(const char* filepath);
 /*
 ------------------------------------------------------------------------------
     ouroc.h -- build recipes header
@@ -327,6 +354,12 @@ void da_init_impl(struct da_impl* impl,size_t elem_size){
     impl->capacity = 0;
 }
 
+void rb_init_impl(struct rb_impl* impl,size_t elem_size,size_t capacity){
+    impl->len = 0;
+    impl->elem_size = elem_size;
+    impl->capacity = capacity;
+}
+
 char* ouroc_read_all_file(const char* filepath){
     char* file_content = NULL;
     FILE* fp = fopen(filepath,"rb");
@@ -361,8 +394,10 @@ bool ouroc_dir_exists(const char* filepath){
 bool ouroc_touch_file(const char* filepath){
     FILE*fp = fopen(filepath,"w");
     if(fp == NULL) goto defer;
+    return true;
 defer:
     if(fp != NULL) fclose(fp);
+    return false;
 }
 bool ouroc_make_dir(const char* filepath){
     #ifdef _WIN32

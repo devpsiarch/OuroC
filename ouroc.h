@@ -144,25 +144,75 @@ do{                                         \
 
 
 struct rb_impl {
-    size_t len;
+    size_t count;
+    size_t head;
+    size_t tail;
     size_t elem_size;
     size_t capacity;
     bool fixed;
 };
 
+// tells the ring buffer if it should grow (like a dynamic array) or stay fixed in capacity
+// depending on the use of the user
+#define FIXED true
+#define NON_FIXED false
+
 #define RB_TEMPLATE(t) struct {struct rb_impl impl;t *data;}
 
-#define RB_INIT(a,capacity)                                 \
+#define RB_INIT(a,capacity,type)                            \
     rb_init_impl(&(a)->impl,sizeof(*(a)->data),(capacity)); \
-    (a)->data = malloc((a)->impl.elem_size*(capacity)) 
+    (a)->data = malloc((a)->impl.elem_size*(capacity));     \
+    (a)->impl.fixed = (type)
 
 #define RB_FREE(a) \
     free((a)->data);
 
 
-#define RB_TEMPLATE_INIT(t,cap,name) \
-    RB_TEMPLATE(t) name;             \
-    RB_INIT(&name,(cap))
+#define RB_TEMPLATE_INIT(type,t,cap,name)   \
+    RB_TEMPLATE(t) name;                    \
+    RB_INIT(&name,(cap),(type))
+
+
+#define RB_FULL(a) (a)->impl.count == (a)->impl.capacity
+#define RB_EMPTY(a) (a)->impl.count == 0
+#define RB_COUNT(a) (a)->impl.count
+#define RB_FIXED(a) (a)->impl.fixed
+#define RB_CAP(a) (a)->impl.capacity
+#define RB_HEAD(a) (a)->impl.head
+#define RB_TAIL(a) (a)->impl.tail
+
+/* These bellow are not safe, user should always check if rb is empty or not */
+#define RB_BACK(a) (a)->data[RB_HEAD(a)]
+#define RB_FRONT(a) (a)->data[RB_TAIL(a)-1]
+
+#define RB_ENQUEUE(a,value)                                             \
+do{                                                                     \
+    if(!(RB_FULL(a))){                                                  \
+        (a)->data[(a)->impl.tail] = (value);                            \
+        (a)->impl.tail = ((a)->impl.tail + 1) % ((a)->impl.capacity);   \
+        ++RB_COUNT(a);                                                  \
+    }else{                                                              \
+        if(!RB_FIXED(a)){                                               \
+            /* reallocate and reorder the ring buffer*/                 \
+            printf("reallocating not yet implimented\n");               \
+        }else{                                                          \
+            /* do nothing */                                            \
+            printf("Can do nothing since fixed\n");                     \
+        }                                                               \
+    }                                                                   \
+}while(0)
+
+#define RB_DEQUEUE(a,ref)                                               \
+do{                                                                     \
+    if(!(RB_EMPTY(a))){                                                 \
+        (*ref) = (a)->data[RB_HEAD(a)];                                 \
+        (a)->impl.head = ((a)->impl.head + 1) % ((a)->impl.capacity);   \
+        --RB_COUNT(a);                                                  \
+    }else{                                                              \
+        printf("Cant do anything, rb is empty\n");                      \
+    }                                                                   \
+}while(0)
+
 
 /*
  *
@@ -355,7 +405,8 @@ void da_init_impl(struct da_impl* impl,size_t elem_size){
 }
 
 void rb_init_impl(struct rb_impl* impl,size_t elem_size,size_t capacity){
-    impl->len = 0;
+    impl->count = 0;
+    impl->head = impl->tail = 0;
     impl->elem_size = elem_size;
     impl->capacity = capacity;
 }

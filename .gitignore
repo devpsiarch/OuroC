@@ -1,4 +1,5 @@
 /bin/
+/exe/
 build
 build.c
 build.exe

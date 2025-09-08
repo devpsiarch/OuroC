@@ -29,7 +29,7 @@
     some algorithms and "STL"-style containers.
 
 TODO
-    -> More features
+    -> [...] More features
 
 ------------------------------------------------------------------------------
 */
@@ -43,6 +43,12 @@ do{                                                                     \
         exit(1);                                                        \
     }                                                                   \
 }while(0)
+
+#ifdef _WIN32
+    #define WIN_ELSE(_win,_else) (_win)
+#else
+    #define WIN_ELSE(_win,_else) (_else)
+#endif
 
 struct da_impl {
     size_t len;
@@ -213,6 +219,15 @@ do{                                                                     \
     }                                                                   \
 }while(0)
 
+#define RB_DEQUEUE_NULL(a)                                              \
+do{                                                                     \
+    if(!(RB_EMPTY(a))){                                                 \
+        (a)->impl.head = ((a)->impl.head + 1) % ((a)->impl.capacity);   \
+        --RB_COUNT(a);                                                  \
+    }else{                                                              \
+        printf("Cant do anything, rb is empty\n");                      \
+    }                                                                   \
+}while(0)
 
 /*
  *
@@ -265,13 +280,14 @@ USAGE
         }
 
 TODO
-    -> More features
-    -> More options for functionality/usage
+    -> [...] More features
+    -> [...] More options for functionality/usage
     -> Nested dependencies management
     -> [DONE] Better Async/sync builds
-    -> Better logging messages
+    -> [ALRIGHT] Better logging messages
     -> Color in logging
-    -> Thread safe printing to stdout (annoying)
+    -> [DONE] Thread safe printing to stdout (annoying)
+    -> controlled building
 
 ------------------------------------------------------------------------------
 */
@@ -310,6 +326,20 @@ struct ouroc {
     OUROC_INIT(&name,__VA_ARGS__)
     
 /* async build commands here */
+
+#ifdef _WIN32
+    static CRITICAL_SECTION stdout_lock;
+    static int stdout_lock_initialized = 0; // not locked
+    static void init_stdout_lock() {
+        if (!stdout_lock_initialized) {
+            InitializeCriticalSection(&stdout_lock);
+            stdout_lock_initialized = 1;
+        }
+    }
+#else
+    static pthread_mutex_t stdout_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
 #ifdef _WIN32
     typedef HANDLE ouroc_proc;
 #else
@@ -317,11 +347,11 @@ struct ouroc {
 #endif
 
 struct ouroc_pool {
-    DA_TEMPLATE(ouroc_proc) procs;
+    RB_TEMPLATE(ouroc_proc) procs;
 };
 
-#define OUROC_POOL(name) struct ouroc_pool name; DA_INIT(&name.procs)
-#define OUROC_POOL_APPEND(master,proc) DA_APPEND(&(master)->procs,(proc))
+#define OUROC_POOL(name,max_threads) struct ouroc_pool name; RB_INIT(&name.procs,(max_threads),FIXED)
+#define OUROC_POOL_APPEND(master,proc) RB_ENQUEUE(&(master)->procs,(proc))
 
 
 /*
@@ -523,7 +553,7 @@ void ouroc_append_stream_many(struct ouroc*master,const unsigned int count,...){
 }
 void ouroc_run_cmd(struct ouroc*master){
     /* Check if target exists */
-    if(ouroc_file_exists(master->target)) goto rebuild_target;
+    if(!ouroc_file_exists(master->target)) goto rebuild_target;
     struct stat target_info = ouroc_get_file_state(master->target);
     /* Check for changed dependency files */
     for(size_t i = 0 ; i < DA_LEN(&master->depend) ; ++i){
@@ -569,25 +599,42 @@ void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
 
 ouroc_proc_ret OUROC_CALLCONV ouroc_build_thread_porter(void*arg){
     struct ouroc* obj = arg;
-    ouroc_run_cmd(obj);
+    // Here were locking stdout before running the command 
+    // since ouroc logs the build proccess and its quite annoying
+    // to see many threads printing at the same time
 #ifdef _WIN32
+    init_stdout_lock();
+    EnterCriticalSection(&stdout_lock);
+    ouroc_run_cmd(obj);
+    fflush(stdout);
+    LeaveCriticalSection(&stdout_lock);
     return 0;
 #else
+    pthread_mutex_lock(&stdout_lock);
+    ouroc_run_cmd(obj);
+    fflush(stdout);
+    pthread_mutex_unlock(&stdout_lock);
     return NULL;
+
 #endif
 }
 
 void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value){
     ouroc_proc proc;
     OUROC_CREATE_PROC(proc,ouroc_build_thread_porter,value);
+    // if the queue is full then we wait for the first queued proccess
+    if(RB_FULL(&master->procs)){
+        OUROC_WAIT_PROC(RB_BACK(&master->procs));
+        RB_DEQUEUE_NULL(&master->procs);
+    }
     OUROC_POOL_APPEND(master,proc);
 }
 
 void ouroc_pool_wait_all(struct ouroc_pool* master){
-   for(size_t i = 0 ; i < DA_LEN(&master->procs) ; i++){
-       OUROC_WAIT_PROC(master->procs.data[i]); 
-   }
-   DA_RESET(&master->procs);
+    while(!RB_EMPTY(&master->procs)){
+        OUROC_WAIT_PROC(RB_BACK(&master->procs));
+        RB_DEQUEUE_NULL(&master->procs);
+    }
 }
 
 #endif

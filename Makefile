@@ -9,4 +9,5 @@ run:build
 
 clean:
 	rm bin/*
-
+wclean:
+	rm exe/*

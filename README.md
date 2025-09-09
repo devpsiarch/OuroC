@@ -36,36 +36,28 @@ ouroc also supports parallel builds:
 
 ```c
     // specify the number of threads you want to use
-    OUROC_POOL(procs,2);
+    OUROC_ASYNC(procs,master,2);
 
     char* target  = WIN_ELSE("exe/main.exe",  "bin/main");
     char* target1 = WIN_ELSE("exe/main1.exe", "bin/main1");
     char* target2 = WIN_ELSE("exe/main2.exe", "bin/main2");
     char* target3 = WIN_ELSE("exe/main3.exe", "bin/main3");
+    
+    OUROC_ASYNC_CREATE(async,target,"main.c");
+        OUROC_ASYNC_RUN(procs,master,async,"gcc","main.c","-o",target);
 
-    OUROC(async,target,"main.c");
-        OUROC_BUILD_CMD(&async,"gcc","main.c","-o",target);
+    OUROC_ASYNC_CREATE(async1,target1,"main.c");
+        OUROC_ASYNC_RUN(procs,master,async1,"gcc","main.c","-o",target1);
 
-    OUROC(async1,target1,"main.c");
-        OUROC_BUILD_CMD(&async1,"gcc","main.c","-o",target1);
+    OUROC_ASYNC_CREATE(async2,target2,"main.c");
+        OUROC_ASYNC_RUN(procs,master,async2,"gcc","main.c","-o",target2);
 
-    OUROC(async2,target2,"main.c");
-        OUROC_BUILD_CMD(&async2,"gcc","main.c","-o",target2);
-
-    OUROC(async3,target3,"main.c");
-        OUROC_BUILD_CMD(&async3,"gcc","main.c","-o",target3);
-
-    ouroc_pool_run_async_single(&procs,&async);
-    ouroc_pool_run_async_single(&procs,&async1);
-    ouroc_pool_run_async_single(&procs,&async2);
-    ouroc_pool_run_async_single(&procs,&async3);
+    OUROC_ASYNC_CREATE(async3,target3,"main.c");
+        OUROC_ASYNC_RUN(procs,master,async3,"gcc","main.c","-o",target3);
 
     ouroc_pool_wait_all(&procs);
 
-    // clean up
-    OUROC_KILL(&async);OUROC_KILL(&async1);OUROC_KILL(&async2);OUROC_KILL(&async3);
-    RB_FREE(&procs.procs);
-
+    OUROC_ASYNC_FREE(procs,master);
 ```
 
 ### 3. Bootstrap the build file

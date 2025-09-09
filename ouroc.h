@@ -211,7 +211,7 @@ do{                                                                     \
 #define RB_DEQUEUE(a,ref)                                               \
 do{                                                                     \
     if(!(RB_EMPTY(a))){                                                 \
-        (*ref) = (a)->data[RB_HEAD(a)];                                 \
+        ref = (a)->data[RB_HEAD(a)];                                    \
         (a)->impl.head = ((a)->impl.head + 1) % ((a)->impl.capacity);   \
         --RB_COUNT(a);                                                  \
     }else{                                                              \
@@ -352,6 +352,27 @@ struct ouroc_pool {
 
 #define OUROC_POOL(name,max_threads) struct ouroc_pool name; RB_INIT(&name.procs,(max_threads),FIXED)
 #define OUROC_POOL_APPEND(master,proc) RB_ENQUEUE(&(master)->procs,(proc))
+
+
+// here we utilize our api and some macros to abstract away details of async builds
+#define OUROC_ASYNC(pool_name,ledger_name,max)  \
+    OUROC_POOL(pool_name,(max));                \
+    DA_TEMPLATE_INIT(struct ouroc,ledger_name)
+
+#define OUROC_ASYNC_CREATE(async_name,target,...)   \
+    OUROC(async_name,target,__VA_ARGS__)
+
+#define OUROC_ASYNC_RUN(pool_name,ledger_name,async_name,...)   \
+        OUROC_BUILD_CMD(&async_name,__VA_ARGS__);               \
+        DA_APPEND(&ledger_name,async_name);                     \
+        ouroc_pool_run_async_single(&pool_name,&async_name)
+
+#define OUROC_ASYNC_FREE(pool_name,ledger_name)                 \
+    for(size_t i = 0 ; i < DA_LEN(&ledger_name) ; ++i){         \
+        OUROC_KILL(&DA_GET(&ledger_name,i));                    \
+    }                                                           \
+    DA_FREE(&ledger_name);                                      \
+    RB_FREE(&pool_name.procs)
 
 
 /*

@@ -327,6 +327,7 @@ struct ouroc {
     
 /* async build commands here */
 
+// these are used if you want to lock something
 #ifdef _WIN32
     static CRITICAL_SECTION stdout_lock;
     static int stdout_lock_initialized = 0; // not locked
@@ -339,6 +340,7 @@ struct ouroc {
 #else
     static pthread_mutex_t stdout_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
+
 
 #ifdef _WIN32
     typedef HANDLE ouroc_proc;
@@ -384,7 +386,7 @@ struct ouroc_pool {
  * */
 
 
-// duh logs to stdout a message (add '\n' on its own)
+// duh logs to stdout a message (add '\n' on its own) [NOT ATOMIC USE FOR SYNC]
 void ouroc_log(enum LogType t, const char *fmt, ...);
 // returns status of a file and exit(1) if fail
 struct stat ouroc_get_file_state(const char* filename);
@@ -620,24 +622,9 @@ void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
 
 ouroc_proc_ret OUROC_CALLCONV ouroc_build_thread_porter(void*arg){
     struct ouroc* obj = arg;
-    // Here were locking stdout before running the command 
-    // since ouroc logs the build proccess and its quite annoying
-    // to see many threads printing at the same time
-#ifdef _WIN32
-    init_stdout_lock();
-    EnterCriticalSection(&stdout_lock);
+    /* We use to lock stdout here ... am a dummy */
     ouroc_run_cmd(obj);
-    fflush(stdout);
-    LeaveCriticalSection(&stdout_lock);
     return 0;
-#else
-    pthread_mutex_lock(&stdout_lock);
-    ouroc_run_cmd(obj);
-    fflush(stdout);
-    pthread_mutex_unlock(&stdout_lock);
-    return NULL;
-
-#endif
 }
 
 void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value){

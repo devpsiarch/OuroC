@@ -246,6 +246,7 @@ bool ouroc_file_exists(const char* filepath);
 bool ouroc_dir_exists(const char* filepath);
 bool ouroc_touch_file(const char* filepath);
 bool ouroc_make_dir(const char* filepath);
+
 /*
 ------------------------------------------------------------------------------
     ouroc.h -- build recipes header
@@ -591,10 +592,10 @@ rebuild_target:
     for(size_t i = 0 ; i < DA_LEN(&master->stream) ;++i){
         char* arg = master->stream.data[i];
         STRING_OWN_CAT(&command,arg);
-        STRING_OWN_APPEND(&command,' ');
+        if(i != DA_LEN(&master->stream)-1) STRING_OWN_APPEND(&command,' ');
     }    
     if(master->target == NULL) ouroc_log(OUROC_INFO,"executing.");
-    else ouroc_log(OUROC_INFO,"Building \"%s\".",master->target);
+    else ouroc_log(OUROC_INFO,"Building \"%s\" [%s].",master->target,command.data);
     int ret = system(command.data);
     if(ret != 0){
         ouroc_log(OUROC_ERROR,"Failed building \"%s\".",master->target);

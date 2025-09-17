@@ -2,6 +2,7 @@
 #define OUORC_H
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <stdarg.h>
@@ -56,12 +57,11 @@ struct da_impl {
     size_t capacity;
 };
 
-
 #define DA_TEMPLATE(t) struct {struct da_impl impl;t *data;}
 
 #define DA_INIT(a)                                  \
     da_init_impl(&(a)->impl,sizeof(*(a)->data));    \
-    (a)->data = NULL
+    (a)->data = malloc((a)->impl.capacity*sizeof(*(a)->data))
 
 
 #define DA_TEMPLATE_INIT(t,name)  \
@@ -97,9 +97,10 @@ do{                                                                             
     (a)->data[(a)->impl.len++] = (value);                                                   \
 }while(0)
 
-#define DA_POP(a)   \
-do{                 \
-    --(a)->impl.len;\
+#define DA_POP(a)           \
+do{                         \
+    if(DA_LEN(a) > 0)       \
+        --(a)->impl.len;    \
 }while(0)           
 
 #define DA_GET(a,index) (a)->data[(index)]
@@ -111,8 +112,34 @@ do{                                             \
     }                                           \
 }while(0)
 
-#define DA_RESERVE(a,size) (a)->impl.capacity = (size);
+#define DA_RESERVE(t,a,size)                                                    \
+do{                                                                             \
+    if((size) > DA_CAPACITY(a)) {                                               \
+        t* new_data = malloc(sizeof(t)*(size));                                 \
+        ASSERT(new_data != NULL,"ERROR: failed to reallocate memory for DA.\n");\
+        for(size_t i = 0 ; i < DA_LEN(a); ++i){                                 \
+            new_data[i] = DA_GET(a,i);                                          \
+        }                                                                       \
+        free((a)->data);                                                        \
+        (a)->data = new_data;                                                   \
+        DA_CAPACITY(a) = size;                                                  \
+    }                                                                           \
+}while(0)
 
+#define DA_RESIZE(t,a,size)                                                     \
+do{                                                                             \
+    t* new_data = malloc(sizeof(t)*size);                                       \
+    ASSERT(new_data != NULL,"ERROR: failed to reallocate memory for DA.\n");    \
+    for(size_t i = 0; i < size ; ++i){                                          \
+        new_data[i] = DA_GET(a,i);                                              \
+    }                                                                           \
+    free((a)->data);                                                            \
+    (a)->data = new_data;                                                       \
+    if(DA_LEN(a) > size) DA_LEN(a) = size;                                      \
+    DA_CAPACITY(a) = size;                                                      \
+}while(0)                       
+
+#define DA_CAPACITY(a) (a)->impl.capacity
 
 typedef struct {
     char* data;
@@ -120,6 +147,7 @@ typedef struct {
 }StringOwn;
 
 #define STRING_OWN(name)    \
+    ;                       \
     StringOwn name;         \
     DA_INIT(&name);         \
     DA_APPEND(&name,'\0')   
@@ -455,7 +483,7 @@ char* heap_string(const char* stack_string){
 void da_init_impl(struct da_impl* impl,size_t elem_size){
     impl->len = 0;
     impl->elem_size = elem_size;
-    impl->capacity = 0;
+    impl->capacity = INIT_DA_CAPACITY;
 }
 
 void rb_init_impl(struct rb_impl* impl,size_t elem_size,size_t capacity){
@@ -587,6 +615,8 @@ void ouroc_run_cmd(struct ouroc*master){
     }
     return;
 rebuild_target:
+    /* clang compiler complains for some reason when having the below macro before below a label */
+    ;
     /* Building the command to be executed */
     STRING_OWN(command);
     for(size_t i = 0 ; i < DA_LEN(&master->stream) ;++i){
@@ -594,7 +624,7 @@ rebuild_target:
         STRING_OWN_CAT(&command,arg);
         if(i != DA_LEN(&master->stream)-1) STRING_OWN_APPEND(&command,' ');
     }    
-    if(master->target == NULL) ouroc_log(OUROC_INFO,"executing.");
+    if(master->target == NULL) ouroc_log(OUROC_INFO,"executing [%s].",command.data);
     else ouroc_log(OUROC_INFO,"Building \"%s\" [%s].",master->target,command.data);
     int ret = system(command.data);
     if(ret != 0){
@@ -640,7 +670,7 @@ void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value){
 }
 
 void ouroc_pool_wait_all(struct ouroc_pool* master){
-    while(!RB_EMPTY(&master->procs)){
+    while(!(RB_EMPTY(&master->procs))){
         OUROC_WAIT_PROC(RB_BACK(&master->procs));
         RB_DEQUEUE_NULL(&master->procs);
     }

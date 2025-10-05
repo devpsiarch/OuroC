@@ -7,6 +7,10 @@
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <time.h>
+#include <math.h>
+
+#define time_diff(start,end) (((end).tv_sec - (start).tv_sec) + ((end).tv_nsec - (start).tv_nsec) / 1e9)
 
 #ifdef _WIN32
   #include <windows.h>
@@ -275,6 +279,7 @@ bool ouroc_dir_exists(const char* filepath);
 bool ouroc_touch_file(const char* filepath);
 bool ouroc_make_dir(const char* filepath);
 
+
 /*
 ------------------------------------------------------------------------------
     ouroc.h -- build recipes header
@@ -405,6 +410,8 @@ struct ouroc_pool {
     DA_FREE(&ledger_name);                                      \
     RB_FREE(&pool_name.procs)
 
+
+#define BUILD_FILE __FILE__
 
 /*
  *
@@ -626,13 +633,22 @@ rebuild_target:
     }    
     if(master->target == NULL) ouroc_log(OUROC_INFO,"executing [%s].",command.data);
     else ouroc_log(OUROC_INFO,"Building \"%s\" [%s].",master->target,command.data);
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC,&start);
     int ret = system(command.data);
+    clock_gettime(CLOCK_MONOTONIC,&end);
     if(ret != 0){
         ouroc_log(OUROC_ERROR,"Failed building \"%s\".",master->target);
         exit(1);
     }
+    double build_time = time_diff(start,end)*1000;
     if(master->target == NULL) ouroc_log(OUROC_INFO,"execution done.");
-    else ouroc_log(OUROC_INFO,"\"%s\" done.",master->target);
+    else {
+        ouroc_log(OUROC_INFO,"\"%s\" done in %.2lf %s.",master->target,
+                build_time > 1000.0f ? build_time/1000.0f : build_time,
+                build_time > 1000.0f ? "s" : "ms"
+                );
+    }
     STRING_OWN_FREE(&command); 
 }
 void ouroc_init_many(struct ouroc*master,char* target,const size_t count,...){
@@ -660,9 +676,12 @@ ouroc_proc_ret OUROC_CALLCONV ouroc_build_thread_porter(void*arg){
 
 void ouroc_pool_run_async_single(struct ouroc_pool* master,struct ouroc* value){
     ouroc_proc proc;
+    // as soong as the procces is created , the porter function is called on that thread
     OUROC_CREATE_PROC(proc,ouroc_build_thread_porter,value);
     // if the queue is full then we wait for the first queued proccess
     if(RB_FULL(&master->procs)){
+        // printf("Ring buffer full ... waiting on turn\n");
+        // was chasing a Ghost-bug ... thank god old me didnt suck
         OUROC_WAIT_PROC(RB_BACK(&master->procs));
         RB_DEQUEUE_NULL(&master->procs);
     }
